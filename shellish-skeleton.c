@@ -313,7 +313,7 @@ int process_command(struct command_t *command) {
 
   if (strcmp(command->name, "exit") == 0)
     return EXIT;
-
+  
   if (strcmp(command->name, "cd") == 0) {
     if (command->arg_count > 0) {
       r = chdir(command->args[1]);
@@ -334,14 +334,28 @@ int process_command(struct command_t *command) {
     // add a NULL argument to the end of args, and the name to the beginning
     // as required by exec
 
+	 
     // TODO: do your own exec with path resolving using execv()
     // do so by replacing the execvp call below
-    execvp(command->name, command->args); // exec+args+path
+    // execvp(command->name, command->args); // exec+args+path
+    char *path = getenv("PATH"); // get the path from environ
+    char *path_copy = strdup(path); // copy path
+    char *dir = strtok(path_copy, ":");
+    while (dir !=NULL){ // try evey directory in path
+	char fpath[1024];
+	sprintf(fpath, "%s/%s", dir,command->name);
+	execv(fpath, command->args);
+	dir = strtok(NULL, ":");
+    }
     printf("-%s: %s: command not found\n", sysname, command->name);
-    exit(127);
-  } else {
+    exit(127); 
+  } else { // parent
     // TODO: implement background processes here
-    wait(0); // wait for child process to finish
+    //wait(0); // wait for child process to finish
+    if (!command->background){
+	   
+	   waitpid(pid, NULL, 0); // if background==0, then wait for this child to finish
+    }
     return SUCCESS;
   }
 }
