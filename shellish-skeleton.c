@@ -340,18 +340,17 @@ int process_command(struct command_t *command) {
 	}
 	
 	pid_t pid2 = fork();
-	if (pid2==0){//if second child, right
-		dup2(piper[0], STDIN_FILENO);
-		close(piper[0]);
-		close(piper[1]);
-		right->next = NULL;
-		process_command(right);
-                exit(0);
+	if (pid2==0){
+	dup2(piper[0], STDIN_FILENO);
+	close(piper[0]);
+	close(piper[1]);
+	process_command(right);
+	exit(0);
 	}
-	close(piper[0]);//close parent end of pipe
-        close(piper[1]);
+	close(piper[0]);
+	close(piper[1]);
 	waitpid(pid1, NULL, 0);
-        waitpid(pid2, NULL, 0);
+	waitpid(pid2, NULL, 0);
 
 	return SUCCESS;
   } 
