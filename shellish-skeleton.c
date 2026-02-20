@@ -326,6 +326,14 @@ int process_command(struct command_t *command) {
   pid_t pid = fork();
   if (pid == 0) // child
   {
+    FILE *fp;
+
+    if (command->redirects[0]){ // input redirection <
+    	fp = fopen(command->redirects[0],"r"); //open file in r mode
+	if (!fp) {perror("input"); exit(1);}
+	dup2(fileno(fp), STDIN_FILENO);//read from the file 
+	fclose(fp);//close file
+    }
     /// This shows how to do exec with environ (but is not available on MacOs)
     // extern char** environ; // environment variables
     // execvpe(command->name, command->args, environ); // exec+args+path+environ
