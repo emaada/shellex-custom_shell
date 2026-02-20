@@ -334,6 +334,21 @@ int process_command(struct command_t *command) {
 	dup2(fileno(fp), STDIN_FILENO);//read from the file 
 	fclose(fp);//close file
     }
+
+    if (command->redirects[1]){//output redirection >
+    	fp = fopen(command->redirects[1],"w");//open in wite mode
+	if (!fp){perror("output"); exit(1);}
+	dup2(fileno(fp), STDOUT_FILENO);// write
+	fclose(fp);
+    }
+
+    if (command->redirects[2]){// append redirection
+    	fp = fopen(command->redirects[2], "a");//open in append mode
+	if (!fp){perror("append"); exit(1);}
+	dup2(fileno(fp), STDOUT_FILENO);//append
+	fclose(fp);
+    }
+
     /// This shows how to do exec with environ (but is not available on MacOs)
     // extern char** environ; // environment variables
     // execvpe(command->name, command->args, environ); // exec+args+path+environ
