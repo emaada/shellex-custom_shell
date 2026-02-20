@@ -322,6 +322,39 @@ int process_command(struct command_t *command) {
       return SUCCESS;
     }
   }
+  
+  if (command->next != NULL){// if pipe
+  	int piper[2]; // new array
+	pipe(piper); //0->read end, 1->write end
+	struct command_t *left = command;
+	struct command_t *right = command->next;
+
+	pid_t pid1 = fork();
+	if (pid1==0){ // if first child, left
+		dup2(piper[1], STDOUT_FILENO);
+		close(piper[0]);
+		close(piper[1]);
+		left->next = NULL;
+		process_command(left);
+		exit(0);
+	}
+	
+	pid_t pid2 = fork();
+	if (pid2==0){//if second child, right
+		dup2(piper[0], STDIN_FILENO);
+		close(piper[0]);
+		close(piper[1]);
+		right->next = NULL;
+		process_command(right);
+                exit(0);
+	}
+	close(piper[0]);//close parent end of pipe
+        close(piper[1]);
+	waitpid(pid1, NULL, 0);
+        waitpid(pid2, NULL, 0);
+
+	return SUCCESS;
+  } 
 
   pid_t pid = fork();
   if (pid == 0) // child
