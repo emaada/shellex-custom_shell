@@ -322,39 +322,134 @@ int process_command(struct command_t *command) {
       return SUCCESS;
     }
   }
+
   
+/*   //PIPE
   if (command->next != NULL){// if pipe
   	int piper[2]; // new array
-	pipe(piper); //0->read end, 1->write end
-	struct command_t *left = command;
-	struct command_t *right = command->next;
+    pipe(piper); //0->read end, 1->write end
+    struct command_t *left = command;
+    struct command_t *right = command->next;
 
-	pid_t pid1 = fork();
-	if (pid1==0){ // if first child, left
-		dup2(piper[1], STDOUT_FILENO);
-		close(piper[0]);
-		close(piper[1]);
-		left->next = NULL;
-		process_command(left);
-		exit(0);
-	}
+    pid_t pid1 = fork();
+    if (pid1==0){ // if first child, left
+      dup2(piper[1], STDOUT_FILENO);
+      close(piper[0]);
+      close(piper[1]);
+      execvp(left->name, left->args);
+      perror("execvp");
+      exit(0);
+		
+	  }
 	
-	pid_t pid2 = fork();
-	if (pid2==0){
-	dup2(piper[0], STDIN_FILENO);
-	close(piper[0]);
-	close(piper[1]);
-	process_command(right);
-	exit(0);
-	}
-	close(piper[0]);
-	close(piper[1]);
-	waitpid(pid1, NULL, 0);
-	waitpid(pid2, NULL, 0);
+    pid_t pid2 = fork();
+    if (pid2==0){
+      dup2(piper[0], STDIN_FILENO);
+      close(piper[0]);
+      close(piper[1]);
+      process_command(right);
+      exit(0);
+    }
+    close(piper[0]);
+    close(piper[1]);
+    waitpid(pid1, NULL, 0);
+    waitpid(pid2, NULL, 0);
 
-	return SUCCESS;
-  } 
+    return SUCCESS;
+  } */
 
+/*   //CUT
+  if (strcmp(command->name, "cut") == 0) {
+    char delimiter = '\t';
+    char *fields = NULL;
+    
+    for (int i = 1; i < command->arg_count - 1; i++) {
+    	if (strcmp(command->args[i], "-d") == 0) {// handles d
+            delimiter = command->args[i+1][0];
+            i++;
+        }
+      else if (strncmp(command->args[i], "-d", 2) == 0){
+          delimiter = command->args[i][2];
+      }
+      else if (strcmp(command->args[i], "-f") == 0){
+          fields = command->args[i+1];
+          i++;
+      }
+      else if (strncmp(command->args[i], "-f", 2) == 0){
+          fields = command->args[i] + 2;
+      }
+    }
+	
+    if (fields == NULL) {
+        fprintf(stderr, "cut: arg missing for -f\n");
+        return SUCCESS;
+    }
+
+    int field_nums[100];
+    int field_count = 0;
+
+    char *fields_copy = strdup(fields);
+    if (!fields_copy) { perror("strdup"); return SUCCESS; }
+
+    char *tok = strtok(fields_copy, ",");
+
+
+    while (tok != NULL) {
+        field_nums[field_count++] = atoi(tok);
+        tok = strtok(NULL, ",");
+    }
+
+    FILE *input = stdin;
+    bool file_found = false;
+
+    for (int i = 1; i < command->arg_count - 1; i++) {
+
+      if (strcmp(command->args[i], "-d") == 0 ||
+          strcmp(command->args[i], "-f") == 0) {
+          i++; 
+          continue;
+      }
+
+      if (strncmp(command->args[i], "-d", 2) == 0 ||
+          strncmp(command->args[i], "-f", 2) == 0) {
+          continue; 
+      }
+
+      input = fopen(command->args[i], "r");
+      if (!input) {
+          perror("cut");
+          free(fields_copy);
+          return SUCCESS;
+      }
+
+      file_found = true;
+      break;
+    }
+
+    char line[4096];
+    while (fgets(line, sizeof(line), input)){
+      char delim[2] = { delimiter, '\0' };
+      char *parts[100];
+      int part_count = 0;
+      char *p = strtok(line, delim);
+      while (p != NULL){
+        parts[part_count++] = p;
+        p = strtok(NULL, delim);
+      }
+	    for (int i = 0; i < field_count; i++){
+
+        int idx = field_nums[i] - 1;
+        if (idx < part_count) printf("%s", parts[idx]);
+        if (i < field_count - 1) printf("%c", delimiter);
+	    }
+	    printf("\n");
+		}
+    if (file_found) fclose(input);
+    free(fields_copy);
+    return SUCCESS;
+  } */
+
+  signal(SIGCHLD, SIG_IGN);
   pid_t pid = fork();
   if (pid == 0) // child
   {
@@ -362,23 +457,23 @@ int process_command(struct command_t *command) {
 
     if (command->redirects[0]){ // input redirection <
     	fp = fopen(command->redirects[0],"r"); //open file in r mode
-	if (!fp) {perror("input"); exit(1);}
-	dup2(fileno(fp), STDIN_FILENO);//read from the file 
-	fclose(fp);//close file
+      if (!fp) {perror("input"); exit(1);}
+      dup2(fileno(fp), STDIN_FILENO);//read from the file 
+      fclose(fp);//close file
     }
 
     if (command->redirects[1]){//output redirection >
     	fp = fopen(command->redirects[1],"w");//open in wite mode
-	if (!fp){perror("output"); exit(1);}
-	dup2(fileno(fp), STDOUT_FILENO);// write
-	fclose(fp);
+      if (!fp){perror("output"); exit(1);}
+      dup2(fileno(fp), STDOUT_FILENO);// write
+      fclose(fp);
     }
 
     if (command->redirects[2]){// append redirection
     	fp = fopen(command->redirects[2], "a");//open in append mode
-	if (!fp){perror("append"); exit(1);}
-	dup2(fileno(fp), STDOUT_FILENO);//append
-	fclose(fp);
+      if (!fp){perror("append"); exit(1);}
+      dup2(fileno(fp), STDOUT_FILENO);//append
+      fclose(fp);
     }
 
     /// This shows how to do exec with environ (but is not available on MacOs)
@@ -393,23 +488,33 @@ int process_command(struct command_t *command) {
     // TODO: do your own exec with path resolving using execv()
     // do so by replacing the execvp call below
     // execvp(command->name, command->args); // exec+args+path
-    char *path = getenv("PATH"); // get the path from environ
-    char *path_copy = strdup(path); // copy path
-    char *dir = strtok(path_copy, ":");
-    while (dir !=NULL){ // try evey directory in path
-	char fpath[1024];
-	sprintf(fpath, "%s/%s", dir,command->name);
-	execv(fpath, command->args);
-	dir = strtok(NULL, ":");
+
+    if (strchr(command->name, '/')!=NULL){
+      execv(command->name, command->args);
+      perror("execv failed");
+      exit(1);
     }
-    printf("-%s: %s: command not found\n", sysname, command->name);
-    exit(127); 
+    else{
+      char *path = getenv("PATH"); // get the path from environ
+      char *path_copy = strdup(path); // copy path
+      char *dir = strtok(path_copy, ":");
+      while (dir !=NULL){ // try evey directory in path
+        char fpath[1024];
+        sprintf(fpath, "%s/%s", dir,command->name);
+        execv(fpath, command->args);
+        dir = strtok(NULL, ":");
+      }
+
+      printf("-%s: %s: command not found\n", sysname, command->name);
+      free(path_copy);
+      exit(127);
+    }
+     
   } else { // parent
     // TODO: implement background processes here
     //wait(0); // wait for child process to finish
-    if (!command->background){
-	   
-	   waitpid(pid, NULL, 0); // if background==0, then wait for this child to finish
+    if (!command->background){ 
+	     waitpid(pid, NULL, 0);  // if background==false, run in foreground, then wait for this child to finish
     }
     return SUCCESS;
   }
