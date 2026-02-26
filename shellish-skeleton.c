@@ -345,8 +345,8 @@ int process_command(struct command_t *command) {
         pipe(pipes[pipe_index]);
     }
     ///////////////
-    fflush(stdout);
-    fflush(stderr);
+    /* fflush(stdout);
+    fflush(stderr); */
     ////////////////
 
     for (command_index=0; command_index<num_commands; command_index++){
@@ -421,31 +421,39 @@ int process_command(struct command_t *command) {
     return SUCCESS; */
   } 
 
-/*   //CUT
+   //CUT
   if (strcmp(command->name, "cut") == 0) {
+    fprintf(stderr, "[DEBUG] arg_count=%d\n", command->arg_count);
+    for (int i = 0; i < command->arg_count; i++) {
+      fprintf(stderr, "[DEBUG] args[%d] = %s\n", i, command->args[i] ? command->args[i] : "NULL");
+    }
     char delimiter = '\t';
     char *fields = NULL;
     
-    for (int i = 1; i < command->arg_count - 1; i++) {
+    for (int i = 1; i < command->arg_count-1 ; i++) {
     	if (strcmp(command->args[i], "-d") == 0) {// handles d
-            delimiter = command->args[i+1][0];
-            i++;
-        }
-      else if (strncmp(command->args[i], "-d", 2) == 0){
-          delimiter = command->args[i][2];
-      }
-      else if (strcmp(command->args[i], "-f") == 0){
-          fields = command->args[i+1];
+          char *darg = command->args[i+1];
+          if (darg[0] == '\'' || darg[0] == '"') delimiter = darg[1];  
+          else delimiter = darg[0];
           i++;
+        }
+      else if (strncmp(command->args[i], "-d", 2) == 0){//handles -d compact form
+        char c = command->args[i][2];
+        if (c == '\'' || c == '"') c = command->args[i][3]; 
+        delimiter = c;
       }
-      else if (strncmp(command->args[i], "-f", 2) == 0){
-          fields = command->args[i] + 2;
+      else if (strcmp(command->args[i], "-f") == 0){//handles f
+        fields = command->args[i+1];
+        i++;
+      }
+      else if (strncmp(command->args[i], "-f", 2) == 0){//handles -f compact form
+        fields = command->args[i] + 2;
       }
     }
 	
     if (fields == NULL) {
-        fprintf(stderr, "cut: arg missing for -f\n");
-        return SUCCESS;
+      fprintf(stderr, "cut: arg missing for -f\n");
+      return SUCCESS;
     }
 
     int field_nums[100];
@@ -458,24 +466,24 @@ int process_command(struct command_t *command) {
 
 
     while (tok != NULL) {
-        field_nums[field_count++] = atoi(tok);
-        tok = strtok(NULL, ",");
+      field_nums[field_count++] = atoi(tok);
+      tok = strtok(NULL, ",");
     }
 
     FILE *input = stdin;
     bool file_found = false;
 
-    for (int i = 1; i < command->arg_count - 1; i++) {
+    for (int i = 1; i < command->arg_count-1 ; i++) {
 
       if (strcmp(command->args[i], "-d") == 0 ||
-          strcmp(command->args[i], "-f") == 0) {
-          i++; 
-          continue;
+        strcmp(command->args[i], "-f") == 0) {
+        i++; 
+        continue;
       }
 
       if (strncmp(command->args[i], "-d", 2) == 0 ||
-          strncmp(command->args[i], "-f", 2) == 0) {
-          continue; 
+        strncmp(command->args[i], "-f", 2) == 0) {
+        continue; 
       }
 
       input = fopen(command->args[i], "r");
@@ -491,6 +499,7 @@ int process_command(struct command_t *command) {
 
     char line[4096];
     while (fgets(line, sizeof(line), input)){
+      line[strcspn(line, "\n")] = 0;
       char delim[2] = { delimiter, '\0' };
       char *parts[100];
       int part_count = 0;
@@ -500,9 +509,8 @@ int process_command(struct command_t *command) {
         p = strtok(NULL, delim);
       }
 	    for (int i = 0; i < field_count; i++){
-
         int idx = field_nums[i] - 1;
-        if (idx < part_count) printf("%s", parts[idx]);
+        if (idx < part_count && idx >= 0) printf("%s", parts[idx]);
         if (i < field_count - 1) printf("%c", delimiter);
 	    }
 	    printf("\n");
@@ -510,7 +518,9 @@ int process_command(struct command_t *command) {
     if (file_found) fclose(input);
     free(fields_copy);
     return SUCCESS;
-  } */
+  } 
+
+
 
   signal(SIGCHLD, SIG_IGN);
   pid_t pid = fork();
