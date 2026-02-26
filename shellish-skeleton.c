@@ -308,6 +308,8 @@ int prompt(struct command_t *command) {
 
 int process_command(struct command_t *command) {
   int r;
+  
+
   if (strcmp(command->name, "") == 0)
     return SUCCESS;
 
@@ -324,9 +326,70 @@ int process_command(struct command_t *command) {
   }
 
   
-/*   //PIPE
+   //PIPE
   if (command->next != NULL){// if pipe
-  	int piper[2]; // new array
+    int command_index = 0;
+    int num_commands = 0;
+    struct command_t *tmp = command;
+    while (tmp != NULL) {
+      num_commands++;
+      tmp = tmp->next;
+    }
+    
+    pid_t pids[num_commands];
+    struct command_t *curr = command;
+    int pipes[num_commands][2];
+
+    int pipe_index = 0;
+    for (pipe_index=0; pipe_index<num_commands-1; pipe_index++) {
+        pipe(pipes[pipe_index]);
+    }
+    ///////////////
+    fflush(stdout);
+    fflush(stderr);
+    ////////////////
+
+    for (command_index=0; command_index<num_commands; command_index++){
+      char *name = curr->name;     
+      char **args = curr->args;    
+      curr = curr->next; 
+      
+      pid_t pid = fork();
+      if (pid < 0) {
+          printf("ERROR: forking child process failed\n");
+          exit(1);
+      }
+      if (pid ==0) {//child
+        if ( command_index> 0) {//except first, read input from prev commands
+          dup2(pipes[command_index-1][0], STDIN_FILENO);
+        }
+        if (command_index < num_commands-1 ) {//except last, replace stdout with the write end of curr pipe
+          dup2(pipes[command_index][1], STDOUT_FILENO);
+        }
+        for (int i=0; i<num_commands-1; i++) {
+          close(pipes[i][0]);
+          close(pipes[i][1]);
+        }
+        if (execvp(name, args)) {
+          printf("ERROR: exec child process failed\n");
+          exit(1);
+        }
+      }
+      else{pids[command_index] = pid; curr->next;}
+    }
+    int i = 0;
+    for (i=0; i<num_commands-1; i++) {
+      close(pipes[i][0]);
+      close(pipes[i][1]);
+    }
+    for (int i=0; i<num_commands; i++) {
+      waitpid(pids[i], NULL, WUNTRACED);
+    }
+    
+    return SUCCESS;
+
+
+  	/* int piper[2]; // new array
     pipe(piper); //0->read end, 1->write end
     struct command_t *left = command;
     struct command_t *right = command->next;
@@ -355,8 +418,8 @@ int process_command(struct command_t *command) {
     waitpid(pid1, NULL, 0);
     waitpid(pid2, NULL, 0);
 
-    return SUCCESS;
-  } */
+    return SUCCESS; */
+  } 
 
 /*   //CUT
   if (strcmp(command->name, "cut") == 0) {
@@ -514,7 +577,7 @@ int process_command(struct command_t *command) {
     // TODO: implement background processes here
     //wait(0); // wait for child process to finish
     if (!command->background){ 
-	     waitpid(pid, NULL, 0);  // if background==false, run in foreground, then wait for this child to finish
+	    waitpid(pid, NULL, 0);  // if background==false, run in foreground, then wait for this child to finish
     }
     return SUCCESS;
   }
