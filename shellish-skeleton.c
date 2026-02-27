@@ -299,16 +299,118 @@ int prompt(struct command_t *command) {
 
   parse_command(buf, command);
 
-  // print_command(command); // DEBUG: uncomment for debugging
+  //print_command(command); // DEBUG: uncomment for debugging
 
   // restore the old settings
   tcsetattr(STDIN_FILENO, TCSANOW, &backup_termios);
   return SUCCESS;
 }
 
+
+//this func sends text to all users except the sender
+void send_to_all(char *room_path, char *username, char *roomname, char *message) {
+    char listfile[512];
+    char cmd[512];
+    snprintf(listfile, sizeof(listfile), "/tmp/chatroom-%s/.list", roomname); //temp .list file instead of opendir/readdir because popen/pclose was blocking due to conflict with the shell's child process handling
+    snprintf(cmd, sizeof(cmd), "ls /tmp/chatroom-%s > %s", roomname, listfile);//to get user list
+    system(cmd);
+
+    FILE *fp = fopen(listfile, "r"); //open in read mode
+    if (!fp) return;
+
+    char user[256];
+    while (fgets(user, sizeof(user), fp)) { //loop users
+        user[strcspn(user, "\n")] = 0; //rem for each filename
+        if (strcmp(user, username) == 0) continue; //skip sender
+        if (strcmp(user, ".list") == 0) continue;  //skip.list file
+
+        char target_path[512];
+        snprintf(target_path, sizeof(target_path), "/tmp/chatroom-%s/%s", roomname, user);//build path target
+
+        pid_t pid = fork();
+        if (pid == 0) {//child
+          char formatted[1024];
+          snprintf(formatted, sizeof(formatted), "[%s] %s: %s", roomname, username, message);
+          int fd = open(target_path, 1);//write-only
+          if (fd >= 0) {
+            write(fd, formatted, strlen(formatted));
+            close(fd);
+          }
+          exit(0);
+        }
+    } 
+    fclose(fp);
+}
+
+//receiver continuously reading from pipe
+void receiver_loop(char *user_path, char *roomname, char *username) {
+    char buffer[1024];
+
+    int fd = open(user_path, 0);  //read-only 
+    if (fd < 0) return;
+
+    while (1) {
+        int n = read(fd, buffer, sizeof(buffer)-1);//reads from named pipe(FIFO)
+        if (n > 0) {
+          buffer[n] = '\0';
+          buffer[strcspn(buffer, "\n")] = 0;
+          printf("\r%s\n[%s] %s > ", buffer, roomname, username);//reprint prompt
+          fflush(stdout);
+        }
+    }
+    
+    close(fd);
+}
+
+//handle user input and send message
+void sender_loop(char *room_path, char *username, char *roomname) {
+  char input[512];
+  while (1) {
+    printf("[%s] %s > ", roomname, username);//prompt
+    fflush(stdout);
+    if (!fgets(input, sizeof(input), stdin)) continue; //read input
+    input[strcspn(input, "\n")] = 0;
+    if (strcmp(input, "exit") == 0) {
+        printf("Leaving chatroom...\n");
+        break;
+    }
+    if (strlen(input) == 0) continue;
+    //printf("\r[%s] %s: %s\n", roomname, username, input);
+    fflush(stdout);
+    //printf("[DEBUG] entering send_to_all\n"); fflush(stdout);
+    send_to_all(room_path, username, roomname, input);// send message
+    //printf("[DEBUG] done send_to_all\n"); fflush(stdout);
+  }
+  
+}
+
+//make a chatroom and handle sender/receiver processes
+void run_chatroom(char *roomname, char *username){
+  char room_path[512];
+  sprintf(room_path, "/tmp/chatroom-%s", roomname);
+  mkdir(room_path, 0777);//room dir
+
+  char user_path[512];
+  sprintf(user_path, "%s/%s", room_path, username);
+  mkfifo(user_path, 0666);//user fifo/names pipe
+  printf("Welcome to %s!\n", roomname);
+  fflush(stdout);
+  pid_t pid = fork();
+  if (pid == 0) { //receiver child
+    receiver_loop(user_path, roomname, username);
+    exit(0);
+  } else { // sender loop in parent
+    sender_loop(room_path, username, roomname);
+    kill(pid, SIGTERM);//kill receiver
+    waitpid(pid, NULL, 0);
+    unlink(user_path);//delete fifo
+  }
+
+}
+
+
 int process_command(struct command_t *command) {
   int r;
-  
 
   if (strcmp(command->name, "") == 0)
     return SUCCESS;
@@ -325,109 +427,14 @@ int process_command(struct command_t *command) {
     }
   }
 
-  
-   //PIPE
-  if (command->next != NULL){// if pipe
-    int command_index = 0;
-    int num_commands = 0;
-    struct command_t *tmp = command;
-    while (tmp != NULL) {
-      num_commands++;
-      tmp = tmp->next;
-    }
-    
-    pid_t pids[num_commands];
-    struct command_t *curr = command;
-    int pipes[num_commands][2];
-
-    int pipe_index = 0;
-    for (pipe_index=0; pipe_index<num_commands-1; pipe_index++) {
-        pipe(pipes[pipe_index]);
-    }
-    ///////////////
-    /* fflush(stdout);
-    fflush(stderr); */
-    ////////////////
-
-    for (command_index=0; command_index<num_commands; command_index++){
-      char *name = curr->name;     
-      char **args = curr->args;    
-      curr = curr->next; 
-      
-      pid_t pid = fork();
-      if (pid < 0) {
-          printf("ERROR: forking child process failed\n");
-          exit(1);
-      }
-      if (pid ==0) {//child
-        if ( command_index> 0) {//except first, read input from prev commands
-          dup2(pipes[command_index-1][0], STDIN_FILENO);
-        }
-        if (command_index < num_commands-1 ) {//except last, replace stdout with the write end of curr pipe
-          dup2(pipes[command_index][1], STDOUT_FILENO);
-        }
-        for (int i=0; i<num_commands-1; i++) {
-          close(pipes[i][0]);
-          close(pipes[i][1]);
-        }
-        if (execvp(name, args)) {
-          printf("ERROR: exec child process failed\n");
-          exit(1);
-        }
-      }
-      else{pids[command_index] = pid; curr->next;}
-    }
-    int i = 0;
-    for (i=0; i<num_commands-1; i++) {
-      close(pipes[i][0]);
-      close(pipes[i][1]);
-    }
-    for (int i=0; i<num_commands; i++) {
-      waitpid(pids[i], NULL, WUNTRACED);
-    }
-    
-    return SUCCESS;
-
-
-  	/* int piper[2]; // new array
-    pipe(piper); //0->read end, 1->write end
-    struct command_t *left = command;
-    struct command_t *right = command->next;
-
-    pid_t pid1 = fork();
-    if (pid1==0){ // if first child, left
-      dup2(piper[1], STDOUT_FILENO);
-      close(piper[0]);
-      close(piper[1]);
-      execvp(left->name, left->args);
-      perror("execvp");
-      exit(0);
-		
-	  }
-	
-    pid_t pid2 = fork();
-    if (pid2==0){
-      dup2(piper[0], STDIN_FILENO);
-      close(piper[0]);
-      close(piper[1]);
-      process_command(right);
-      exit(0);
-    }
-    close(piper[0]);
-    close(piper[1]);
-    waitpid(pid1, NULL, 0);
-    waitpid(pid2, NULL, 0);
-
-    return SUCCESS; */
-  } 
-
-   //CUT
+  //CUT
   if (strcmp(command->name, "cut") == 0) {
+    /* printf(">>> MY CUT EXECUTED <<<\n");
     fprintf(stderr, "[DEBUG] arg_count=%d\n", command->arg_count);
     for (int i = 0; i < command->arg_count; i++) {
       fprintf(stderr, "[DEBUG] args[%d] = %s\n", i, command->args[i] ? command->args[i] : "NULL");
-    }
-    char delimiter = '\t';
+    } */
+    char delimiter = '\t';//default delimiter tab
     char *fields = NULL;
     
     for (int i = 1; i < command->arg_count-1 ; i++) {
@@ -456,6 +463,7 @@ int process_command(struct command_t *command) {
       return SUCCESS;
     }
 
+    //parse fields
     int field_nums[100];
     int field_count = 0;
 
@@ -486,6 +494,7 @@ int process_command(struct command_t *command) {
         continue; 
       }
 
+      //if filename exists, set input to read form file
       input = fopen(command->args[i], "r");
       if (!input) {
           perror("cut");
@@ -497,8 +506,9 @@ int process_command(struct command_t *command) {
       break;
     }
 
+    //otherwise, stdin
     char line[4096];
-    while (fgets(line, sizeof(line), input)){
+    while (fgets(line, sizeof(line), input)){//process each line
       line[strcspn(line, "\n")] = 0;
       char delim[2] = { delimiter, '\0' };
       char *parts[100];
@@ -521,6 +531,86 @@ int process_command(struct command_t *command) {
   } 
 
 
+   //PIPE
+  if (command->next != NULL){// if pipe
+    int command_index = 0;
+    int num_commands = 0;
+    struct command_t *tmp = command;
+
+    //count the number of commands in pipeline
+    while (tmp != NULL) {
+      num_commands++;
+      tmp = tmp->next;
+    }
+    
+    pid_t pids[num_commands];//store child PID for each command in array
+    struct command_t *curr = command;
+    int pipes[num_commands][2];//pipe array
+
+    int pipe_index = 0;
+    for (pipe_index=0; pipe_index<num_commands-1; pipe_index++) {
+        pipe(pipes[pipe_index]);// pipes[i][0] = read end, pipes[i][1] = write end
+    }
+
+    for (command_index=0; command_index<num_commands; command_index++){
+      char *name = curr->name;     
+      char **args = curr->args;    
+      curr = curr->next; 
+      
+      pid_t pid = fork();
+      if (pid < 0) {
+          printf("ERROR: forking child process failed\n");
+          exit(1);
+      }
+      if (pid ==0) {//child
+        if ( command_index> 0) {//except first command, read input from prev commands
+          dup2(pipes[command_index-1][0], STDIN_FILENO);
+        }
+        if (command_index < num_commands-1 ) {//except last command, replace stdout with the write end of curr pipe
+          dup2(pipes[command_index][1], STDOUT_FILENO);
+        }
+        for (int i=0; i<num_commands-1; i++) {// close all pipes in child
+          close(pipes[i][0]);
+          close(pipes[i][1]);
+        }
+        //execute command
+        if (execvp(name, args)) {
+          printf("ERROR: exec child process failed\n");
+          exit(1);
+        }
+      }
+      //parent
+      else{pids[command_index] = pid; }//store child PID for wait later
+    }
+    //clos eall pipe in parent
+    int i = 0;
+    for (i=0; i<num_commands-1; i++) {
+      close(pipes[i][0]);
+      close(pipes[i][1]);
+    }
+    //wait for children to finish
+    for (int i=0; i<num_commands; i++) {
+      waitpid(pids[i], NULL, WUNTRACED);
+    }
+    
+    return SUCCESS;
+
+  } 
+
+  //CHATROOM
+  if (strcmp(command->name, "chatroom") == 0) {
+    if (command->arg_count < 3) {
+      printf("Usage Format: chatroom <roomname> <username>, enter roomane + username\n");
+      return SUCCESS;
+    }
+    /* pid_t pid = fork();
+    if (pid == 0) { */
+      run_chatroom(command->args[1], command->args[2]);
+      /* exit(0);
+    }
+    if (!command->background) waitpid(pid, NULL, 0); */
+    return SUCCESS;
+  }
 
   signal(SIGCHLD, SIG_IGN);
   pid_t pid = fork();
@@ -536,7 +626,7 @@ int process_command(struct command_t *command) {
     }
 
     if (command->redirects[1]){//output redirection >
-    	fp = fopen(command->redirects[1],"w");//open in wite mode
+    	fp = fopen(command->redirects[1],"w");//open in write mode
       if (!fp){perror("output"); exit(1);}
       dup2(fileno(fp), STDOUT_FILENO);// write
       fclose(fp);
@@ -548,19 +638,6 @@ int process_command(struct command_t *command) {
       dup2(fileno(fp), STDOUT_FILENO);//append
       fclose(fp);
     }
-
-    /// This shows how to do exec with environ (but is not available on MacOs)
-    // extern char** environ; // environment variables
-    // execvpe(command->name, command->args, environ); // exec+args+path+environ
-
-    /// This shows how to do exec with auto-path resolve
-    // add a NULL argument to the end of args, and the name to the beginning
-    // as required by exec
-
-	 
-    // TODO: do your own exec with path resolving using execv()
-    // do so by replacing the execvp call below
-    // execvp(command->name, command->args); // exec+args+path
 
     if (strchr(command->name, '/')!=NULL){
       execv(command->name, command->args);
@@ -584,14 +661,13 @@ int process_command(struct command_t *command) {
     }
      
   } else { // parent
-    // TODO: implement background processes here
-    //wait(0); // wait for child process to finish
     if (!command->background){ 
 	    waitpid(pid, NULL, 0);  // if background==false, run in foreground, then wait for this child to finish
     }
     return SUCCESS;
   }
 }
+
 
 int main() {
   while (1) {
