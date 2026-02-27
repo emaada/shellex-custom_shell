@@ -6,6 +6,10 @@
 #include <sys/wait.h>
 #include <termios.h> // termios, TCSANOW, ECHO, ICANON
 #include <unistd.h>
+//added include headers
+#include <fcntl.h>      // for open()
+#include <sys/stat.h>   // for mkdir(), mkfifo()
+
 const char *sysname = "shellish";
 
 enum return_codes {
@@ -310,7 +314,7 @@ int prompt(struct command_t *command) {
 //this func sends text to all users except the sender
 void send_to_all(char *room_path, char *username, char *roomname, char *message) {
     char listfile[512];
-    char cmd[512];
+    char cmd[1024];
     snprintf(listfile, sizeof(listfile), "/tmp/chatroom-%s/.list", roomname); //temp .list file instead of opendir/readdir because popen/pclose was blocking due to conflict with the shell's child process handling
     snprintf(cmd, sizeof(cmd), "ls /tmp/chatroom-%s > %s", roomname, listfile);//to get user list
     system(cmd);
@@ -390,8 +394,8 @@ void run_chatroom(char *roomname, char *username){
   sprintf(room_path, "/tmp/chatroom-%s", roomname);
   mkdir(room_path, 0777);//room dir
 
-  char user_path[512];
-  sprintf(user_path, "%s/%s", room_path, username);
+  char user_path[1024];
+  snprintf(user_path, sizeof(user_path), "%s/%s", room_path, username);
   mkfifo(user_path, 0666);//user fifo/names pipe
   printf("Welcome to %s!\n", roomname);
   fflush(stdout);
