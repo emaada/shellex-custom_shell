@@ -102,3 +102,12 @@ Reminder 'meeting' set for 5 seconds.
 shellish$
 !!! REMINDER !!! -> Rescheduled sync
 ```
+---
+
+## Acknowledgements
+
+This assignment used assistance from AI tools for debugging,comment formatting and testing guidance.
+
+AI tools used:
+- ChatGPT (OpenAI): tests generated for debugging and comment grammar verified.
+- Codeguru discussion on zombie processes: https://forums.codeguru.com/showthread.php?256813-signal(SIGCLD-SIG_IGN)-can-not-prevent-zombie-process 
