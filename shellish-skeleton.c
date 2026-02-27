@@ -408,8 +408,20 @@ void run_chatroom(char *roomname, char *username){
 
 }
 
+//for REMIND command
+#define MAX_REMINDERS 64
+typedef struct {
+    pid_t pid;
+    char key[64];
+    int seconds;
+} ReminderEntry;
+
+ReminderEntry active_reminders[MAX_REMINDERS];
+int reminder_count = 0;
+//////////////////////////////
 
 int process_command(struct command_t *command) {
+  signal(SIGCHLD, SIG_IGN);
   int r;
 
   if (strcmp(command->name, "") == 0)
@@ -582,7 +594,7 @@ int process_command(struct command_t *command) {
       //parent
       else{pids[command_index] = pid; }//store child PID for wait later
     }
-    //clos eall pipe in parent
+    //close all pipe in parent
     int i = 0;
     for (i=0; i<num_commands-1; i++) {
       close(pipes[i][0]);
@@ -612,7 +624,131 @@ int process_command(struct command_t *command) {
     return SUCCESS;
   }
 
-  signal(SIGCHLD, SIG_IGN);
+
+//REMIND COMMAND
+if (strcmp(command->name, "remind") == 0) {
+
+  // for cancelling
+  if (command->arg_count >= 3 && strcmp(command->args[1], "cancel") == 0){
+    char *key = command->args[2];
+    int found = 0;
+    for (int i = 0; i < reminder_count; i++) {
+      if (strcmp(active_reminders[i].key, key) == 0){
+        //
+        char fifo_path[256];
+        snprintf(fifo_path, sizeof(fifo_path), "/tmp/remind_%d", active_reminders[i].pid);
+        int fd = open(fifo_path, 1);
+        if (fd >= 0) {
+          write(fd, "cancel", 6);
+          close(fd);
+        }
+        //remove from active reminders list by replacinf with last reminder
+        active_reminders[i] = active_reminders[--reminder_count];
+        found = 1;
+        printf("reminder '%s' is cancelled.\n", key);
+        break;
+      }
+    }
+    if (!found) printf("no reminder with key '%s'.\n", key);
+    return SUCCESS;
+  }
+
+  //validate args
+  if (command->arg_count < 5) {
+    printf("Usage: remind <key> <seconds> <message>\n");
+    return SUCCESS;
+  }
+  char *key= command->args[1];
+  int  seconds  = atoi(command->args[2]);
+  if (seconds <= 0) {
+    printf("Time is not negative, yet. Enter a positve number of seconds.\n");
+    return SUCCESS;
+  }
+
+  //reclaim the slot if key exists but process is finished, to reuse key
+  for (int i = 0; i < reminder_count; i++){
+    if (strcmp(active_reminders[i].key, key) == 0){
+      if (kill(active_reminders[i].pid, 0) != 0) {
+        //process is gone, reclaim slot
+        active_reminders[i] = active_reminders[--reminder_count];
+        break;
+      }
+      printf("A reminder with key '%s' already exists :((\n", key);
+      return SUCCESS;
+    }
+  }
+  if (reminder_count >= MAX_REMINDERS) {
+    printf("I can't remember this much stuff :((\n");
+    return SUCCESS;
+  }
+
+  //build full message
+  char full_message[1024] = "";
+  for (int i = 3; i < command->arg_count; i++) {
+    if (command->args[i] == NULL) break;
+    strncat(full_message, command->args[i], sizeof(full_message) - strlen(full_message) - 1);
+    strncat(full_message, " ", sizeof(full_message) - strlen(full_message) - 1);
+  }
+
+  //fork child to wait in background
+  pid_t pid = fork();
+  if (pid < 0) {
+    perror("fork");
+    exit(0);
+  }
+
+  if (pid == 0) {//child, runs in background
+    // Unique FIFO per reminder by its PID
+    char fifo_path[256];
+    snprintf(fifo_path, sizeof(fifo_path),"/tmp/remind_%d", getpid());
+    if (mkfifo(fifo_path, 0666) == -1) {
+      perror("mkfifo");
+      exit(1);
+    }
+
+    // opening fifo in NONBLOCK mode so reads dont stall
+    int fifo_fd = open(fifo_path, 0 | 2048);
+
+    if (fifo_fd < 0) {
+      perror("open fifo");
+      unlink(fifo_path);
+      exit(1);
+    }
+
+    //count down, continuously checking for cancel signal
+    for (int elapsed = 0; elapsed < seconds; elapsed++) {
+      sleep(1);
+
+      // Check for cancel signal
+      char buf[16];
+      int n = read(fifo_fd, buf, sizeof(buf));
+      if (n > 0) {
+        close(fifo_fd);
+        unlink(fifo_path);
+        exit(0);
+      }
+    }
+    //timer expired, remind the forgetful user
+    printf("\n\n!!! REMINDER !!! -> %s\n", full_message);
+    show_prompt();
+
+    close(fifo_fd);
+    unlink(fifo_path);
+    exit(0);
+  }
+  //parent process
+  signal(SIGCHLD, SIG_IGN); //to avoid zombies
+  strncpy(active_reminders[reminder_count].key, key, sizeof(active_reminders[0].key) - 1);
+  active_reminders[reminder_count].pid     = pid;
+  active_reminders[reminder_count].seconds = seconds;
+  reminder_count++;
+
+  printf("Reminder set for %d seconds.\n", seconds);
+  return SUCCESS;
+  }
+
+ 
+  //signal(SIGCHLD, SIG_IGN);
   pid_t pid = fork();
   if (pid == 0) // child
   {
@@ -654,7 +790,6 @@ int process_command(struct command_t *command) {
         execv(fpath, command->args);
         dir = strtok(NULL, ":");
       }
-
       printf("-%s: %s: command not found\n", sysname, command->name);
       free(path_copy);
       exit(127);
@@ -671,8 +806,7 @@ int process_command(struct command_t *command) {
 
 int main() {
   while (1) {
-    struct command_t *command =
-        (struct command_t *)malloc(sizeof(struct command_t));
+    struct command_t *command = (struct command_t *)malloc(sizeof(struct command_t));
     memset(command, 0, sizeof(struct command_t)); // set all bytes to 0
 
     int code;
