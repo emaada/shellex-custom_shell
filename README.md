@@ -5,7 +5,7 @@ https://github.com/eadal23/assignment-1.git
 ## Building & Running
 `````
  gcc -o shell-ish shellish-skeleton.c
-./shell-ish   or   rlwrap --always-readline ./shell-ish
+./shell-ish   or   ./rlwrap --always-readline ./shell-ish
 ``````
 ## Built-in Commands
 
