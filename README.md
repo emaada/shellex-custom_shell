@@ -87,7 +87,7 @@ shellish$ remind cancel standup
 ```
 
 ### Notes
-- Keys must be unique — you cannot have two active reminders with the same key.
+- Keys must be unique: cannot have two active reminders with the same key.
 - Once a reminder fires or is cancelled, its key is free to reuse.
 - Up to 64 reminders can be active at the same time.
 - The reminder message prints directly to your terminal when the timer expires.
@@ -109,5 +109,5 @@ shellish$
 This assignment used assistance from AI tools for debugging, comment formatting and testing guidance.
 
 AI tools used:
-- ChatGPT (OpenAI): tests generated for debugging and comment grammar verified.
+- ChatGPT (OpenAI): tests generated for debugging and comment/README grammar verified.
 - Codeguru discussion on zombie processes: https://forums.codeguru.com/showthread.php?256813-signal(SIGCLD-SIG_IGN)-can-not-prevent-zombie-process 
