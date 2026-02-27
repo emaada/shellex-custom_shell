@@ -1,4 +1,6 @@
 # assignment-1
+This assignment is implemented on Linux.
+Repo Link:
 
 https://github.com/eadal23/assignment-1.git
 
