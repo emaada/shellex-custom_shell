@@ -106,7 +106,7 @@ shellish$
 
 ## Acknowledgements
 
-This assignment used assistance from AI tools for debugging,comment formatting and testing guidance.
+This assignment used assistance from AI tools for debugging, comment formatting and testing guidance.
 
 AI tools used:
 - ChatGPT (OpenAI): tests generated for debugging and comment grammar verified.
