@@ -1,8 +1,6 @@
-# assignment-1
+# SHELLISH
+(Assignment done as part of Koc Univerity COMP304 course)
 This assignment is implemented on Linux.
-Repo Link:
-
-https://github.com/eadal23/assignment-1.git
 
 ## Building & Running
 `````
